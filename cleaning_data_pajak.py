@@ -2,6 +2,7 @@ import pandas as pd
 import re
 import html
 import os
+import emoji
 
 
 # =========================================================
@@ -149,6 +150,8 @@ normalisasi = {
     "yg": "yang",
     "yng": "yang",
 
+    "okt":"oktober",
+
     "dgn": "dengan",
     "dg": "dengan",
 
@@ -193,6 +196,12 @@ normalisasi = {
     "dr": "dari",
 
     "sm": "sama",
+
+    "pls": "tolong",
+
+    "slama": "selama",
+
+    "kl": "kalau",
 
     "org": "orang",
 
@@ -294,9 +303,10 @@ def clean_text(text):
     # -----------------------------------------
 
     text = re.sub(
-        r"http\S+|www\S+",
-        " ",
-        text
+    r"(https?://\S+|www\.\S+|\b[a-zA-Z0-9-]+\.(?:com|id|co\.id|net|org|go\.id)\S*)",
+    " ",
+    text,
+    flags=re.IGNORECASE
     )
 
     # -----------------------------------------
@@ -335,11 +345,7 @@ def clean_text(text):
     # Emoji
     # -----------------------------------------
 
-    text = re.sub(
-        r"[\U00010000-\U0010ffff]",
-        " ",
-        text
-    )
+    text = emoji.replace_emoji(text, replace=" ")
 
     # -----------------------------------------
     # Angka
@@ -436,6 +442,13 @@ print("\nSedang melakukan cleaning...")
 df["clean_text"] = df[
     TEXT_COLUMN
 ].apply(clean_text)
+
+print("\nTES PENGHAPUSAN EMOJI:")
+print(
+    df[[TEXT_COLUMN, "clean_text"]]
+    .head(10)
+    .to_string(index=False)
+)
 
 
 # =========================================================
@@ -568,6 +581,10 @@ SPAM_KEYWORDS = {
 
 IRRELEVANT_KEYWORDS = {
 
+    # Belajar
+    "jumatbelajar",
+    "belajar",
+
     # Jual beli umum
     "price",
     "harga",
@@ -601,80 +618,147 @@ IRRELEVANT_KEYWORDS = {
 }
 
 
+
+
 # =========================================================
 # 15. FUNGSI KLASIFIKASI
 # =========================================================
 
 def classify_text(text):
 
-    words = set(text.split())
+    text_lower = str(text).lower()
+    words = set(text_lower.split())
 
     # -----------------------------------------
     # A. CEK SPAM
     # -----------------------------------------
 
-    spam_matches = words.intersection(
-        SPAM_KEYWORDS
-    )
+    spam_matches = words.intersection(SPAM_KEYWORDS)
+
+    if len(spam_matches) >= 2:
+        return "SPAM"
 
     # -----------------------------------------
-    # B. CEK TOPIK PAJAK
+    # B. CEK JOKI TUGAS
     # -----------------------------------------
 
-    pajak_matches = words.intersection(
-        PAJAK_KEYWORDS
-    )
+    joki_keywords = {
+        "joki",
+        "jasajoki",
+        "openjoki",
+        "jokitugas",
+        "jokiin",
+        "jasa",
+        "tugas",
+        "jokippt",
+        "jokipajak"
+    }
 
+    # Bentuk kata joki yang menempel atau terpisah
+    if (
+        re.search(r"\bjoki\w*\b", text_lower)
+        or re.search(r"\bjasajoki\w*\b", text_lower)
+        or re.search(r"\bopenjoki\w*\b", text_lower)
+    ):
+        return "SPAM"
+
+    if "joki tugas" in text_lower or "jasa joki" in text_lower:
+        return "SPAM"
+
+    # -----------------------------------------
+    # C. CEK PROMOSI MERCHANDISE / FANDOM
+    # -----------------------------------------
+
+    promo_keywords = {
+        "popupstore",
+        "fandom",
+        "gmmtv",
+        "transparent",
+        "card",
+        "merchandise"
+    }
+
+    promo_matches = words.intersection(promo_keywords)
+
+    if len(promo_matches) >= 3:
+        return "SPAM"
+
+    # -----------------------------------------
+    # D. CEK TOPIK PAJAK DAN MARKETPLACE
+    # -----------------------------------------
+
+    pajak_matches = words.intersection(PAJAK_KEYWORDS)
     marketplace_matches = words.intersection(
         MARKETPLACE_KEYWORDS
     )
 
     # -----------------------------------------
-    # C. PRIORITAS SPAM
+    # E. CEK KONTEKS PAJAK KENDARAAN
     # -----------------------------------------
 
-    if len(spam_matches) >= 2:
+    pajak_kendaraan = {
+        "kendaraan",
+        "motor",
+        "mobil",
+        "stnk",
+        "samsat",
+        "plat",
+        "perpanjangan"
+    }
 
-        return "SPAM"
+    konteks_kendaraan = words.intersection(
+        pajak_kendaraan
+    )
 
-    # Joki tugas secara langsung dianggap spam
+    if konteks_kendaraan and not any(
+        istilah in text_lower
+        for istilah in [
+            "pph pasal 22",
+            "pph 22",
+            "pajak penjual",
+            "pajak penjualan",
+            "pajak marketplace",
+            "pajak pedagang"
+        ]
+    ):
+        return "TIDAK RELEVAN"
+
+    # -----------------------------------------
+    # CEK KONTEN TIDAK RELEVAN
+    # -----------------------------------------
+
+    if "jumatbelajar" in words:
+        return "TIDAK RELEVAN"
+
+        # -----------------------------------------
+    # CEK PROMOSI / IKLAN
+    # -----------------------------------------
+
+    promo_phrases = [
+        "cek poster",
+        "info lengkap",
+        "upgrade skill",
+        "belajar kilat",
+        "modal rupiah",
+        "this for you",
+        "edukasi"
+    ]
+
     if any(
-        word in words
-        for word in {
-            "joki",
-            "jasajoki",
-            "openjoki",
-            "jokitugas"
-        }
+        phrase in text_lower
+        for phrase in promo_phrases
     ):
-
-        return "SPAM"
+        return "TIDAK RELEVAN"
 
     # -----------------------------------------
-    # D. RELEVAN
+    # F. PENENTUAN KATEGORI
     # -----------------------------------------
 
-    # Minimal ada kata pajak + marketplace/e-commerce
-    if (
-        len(pajak_matches) >= 1
-        and len(marketplace_matches) >= 1
-    ):
-
+    if pajak_matches and marketplace_matches:
         return "RELEVAN"
 
-    # -----------------------------------------
-    # E. RELEVAN DENGAN PAJAK YANG JELAS
-    # -----------------------------------------
+    return "TIDAK RELEVAN"
 
-    if len(pajak_matches) >= 2:
-
-        return "RELEVAN"
-
-    # -----------------------------------------
-    # F. TIDAK RELEVAN
-    # -----------------------------------------
-
-    return "TIDAK_RELEVAN"
 
 
 # =========================================================
@@ -956,3 +1040,55 @@ print(
 )
 
 print("\nCleaning + Filtering + Klasifikasi selesai!")
+
+
+# =========================================================
+# MENYIMPAN CSV KHUSUS CLEAN_TEXT
+# =========================================================
+
+clean_text_output = os.path.join(
+    BASE_DIR,
+    "tweets-data",
+    "clean_text_saja.csv"
+)
+
+df[["clean_text"]].to_csv(
+    clean_text_output,
+    index=False,
+    encoding="utf-8-sig"
+)
+
+print(
+    "CSV khusus clean_text:",
+    clean_text_output
+)
+
+
+# =========================================================
+# 18. MENYIMPAN DATA FINAL SIAP ANALISIS
+# =========================================================
+
+# Ambil hanya data yang relevan
+df_final = df[
+    df["kategori"] == "RELEVAN"
+].copy()
+
+# Pastikan clean_text tidak kosong
+df_final = df_final[
+    df_final["clean_text"].notna()
+    & (df_final["clean_text"].str.strip() != "")
+].copy()
+
+# Simpan hanya kolom teks yang sudah dibersihkan
+df_clean_final = df_final[["clean_text"]].copy()
+
+# Simpan ke CSV
+df_clean_final.to_csv(
+    "data_final_bersih_siapanalisis.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
+
+print("File final siap analisis berhasil disimpan.")
+print("Jumlah data relevan:", len(df_clean_final))
+print("Nama file: data_final_bersih_siapanalisis.csv")

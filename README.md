@@ -41,3 +41,7 @@ File hasil pengolahan data:
 
 ## 7. Tujuan Analisis
 Data ini dapat digunakan untuk mengamati percakapan di media sosial mengenai kebijakan pajak marketplace dan kaitannya dengan aktivitas bisnis digital.
+
+## Flowchart Penelitian
+
+![Flowchart Pengolahan Data](flowchart_pengolahan_data.png)
